@@ -1,0 +1,36 @@
+version: '3.8'
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:12
+    restart: always
+    ports:
+      - "5432:5432"
+    logging:
+      options:
+        max-size: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+    environment:
+      POSTGRES_DB: igludb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${IGLU_DB_PASSWORD:-iglusecret}
+  iglu-server:
+    container_name: iglu-server
+    image: snowplow/iglu-server:${IGLU_VERSION:-0.10.0}
+    command: --config /snowplow/config/config.hocon
+    environment:
+      IGLU_SUPER_API_KEY: ${IGLU_SUPER_API_KEY:-5fb4713d-73ad-4163-93a9-2b82f0177c5b}
+      IGLU_DB_PASSWORD: ${IGLU_DB_PASSWORD:-iglusecret}
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    volumes:
+      - "../config/config.minimal.hocon:/snowplow/config/config.hocon"
+    logging:
+      options:
+        max-size: 1G
