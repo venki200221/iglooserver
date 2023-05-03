@@ -1,5 +1,54 @@
 version: '3.8'
 services:
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zk-data:/var/lib/zookeeper/data
+      - zk-logs:/var/lib/zookeeper/log
+      - secrets:/etc/zookeeper/secrets
+  
+  kafka:
+    image: confluentinc/cp-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - secrets:/etc/kafka/secrets
+
+  scala-stream-collector:
+    image: snowplow/scala-stream-collector-kafka
+    command: [ "--config", "/snowplow/config/stream-collector.conf"]
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./scala-stream-collector-config:/snowplow/config
+    environment:
+      - "SP_JAVA_OPTS=-Xms512m -Xmx512m"
+
+  stream-enrich:
+    image: snowplow/stream-enrich-kafka
+    command: [
+      "--config", "/snowplow/config/stream-enrich.conf",
+      "--resolver", "file:/snowplow/config/iglu-resolver.json"
+    ]
+    depends_on:
+      - scala-stream-collector
+    volumes:
+      - ./stream-enrich-config:/snowplow/config
+    environment:
+      - "SP_JAVA_OPTS=-Xms512m -Xmx512m"
+
   postgres:
     container_name: postgres
     image: postgres:12
@@ -28,9 +77,26 @@ services:
     depends_on:
       - postgres
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - "../config/config.minimal.hocon:/snowplow/config/config.hocon"
     logging:
       options:
         max-size: 1G
+
+  web:
+    image: nginx
+    volumes:
+      - ./web:/usr/share/nginx/html
+    ports:
+      - "80:80"
+
+  events-processor:
+    build:
+      context: ./events-processor
+  
+volumes:
+  zk-data: {}
+  zk-logs: {}
+  kafka-data: {}
+  secrets: {}
